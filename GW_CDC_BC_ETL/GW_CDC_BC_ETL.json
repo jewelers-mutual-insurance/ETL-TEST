@@ -1,0 +1,43 @@
+{
+  "name" : "GW_CDC_BC_ETL",
+  "jobMode" : "SCRIPT",
+  "description" : "",
+  "role" : "arn:aws:iam::992382796538:role/service-role/AWSGlueServiceRole",
+  "executionProperty" : {
+    "maxConcurrentRuns" : 2
+  },
+  "command" : {
+    "name" : "glueetl",
+    "scriptLocation" : "s3://aws-glue-assets-992382796538-us-east-1/scripts/GW_CDC_BC_ETL.py",
+    "pythonVersion" : "3"
+  },
+  "defaultArguments" : {
+    "--enable-metrics" : "true",
+    "--spark-event-logs-path" : "s3://aws-glue-assets-992382796538-us-east-1/sparkHistoryLogs/",
+    "--enable-job-insights" : "true",
+    "--additional-python-modules" : "psycopg2-binary,geopandas,shapely",
+    "--enable-observability-metrics" : "true",
+    "--enable-glue-datacatalog" : "true",
+    "--job-bookmark-option" : "job-bookmark-disable",
+    "--job-language" : "python",
+    "--TempDir" : "s3://aws-glue-assets-992382796538-us-east-1/temporary/",
+    "--enable-auto-scaling" : "true"
+  },
+  "connections" : {
+    "connections" : [ "DailySnapshotConnection", "staticInstanceConnection" ]
+  },
+  "maxRetries" : 0,
+  "allocatedCapacity" : 40,
+  "timeout" : 2880,
+  "maxCapacity" : 40.0,
+  "glueVersion" : "5.0",
+  "numberOfWorkers" : 10,
+  "workerType" : "G.4X",
+  "executionClass" : "STANDARD",
+  "sourceControlDetails" : {
+    "provider" : "GITHUB",
+    "repository" : "ETL-TEST",
+    "branch" : "dev",
+    "folder" : "GW_CDC_BC_ETL"
+  }
+}
