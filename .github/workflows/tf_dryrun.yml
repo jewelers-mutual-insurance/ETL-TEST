@@ -27,7 +27,7 @@ jobs:
            (cd jobs/$j && zip -r ../../${j}.zip . -x "__pycache__/*" "*.pyc") || true
          done
       - name: Upload demo zips as workflow artifacts
-        uses: actions/upload-artifacts@v4
+        uses: actions/upload-artifact@v4
         with: 
          name: job-zips
          path: "*.zip"
