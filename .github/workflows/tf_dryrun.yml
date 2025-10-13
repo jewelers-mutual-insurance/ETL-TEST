@@ -9,13 +9,13 @@ jobs:
   dryrun:
     runs-on: ubuntu-latest
     steps:
-      - uses : actions/checkout@v4
+      - uses: actions/checkout@v4
 
       #1) Zip any job/* folder
       - name: Find jobs
         id: jobs
         run: |
-          if [-d jobs]; then
+          if [ -d jobs ]; then
             ls -1 jobs > jobs.list || true
           fi
           echo "jobs=$(cat jobs.list 2>/dev/null | tr '\n' ' ')" >> $GITHUB_OUTPUT
@@ -41,7 +41,7 @@ jobs:
         run: terraform -chdir=terraform/envs/dev init -backend=false
 
       - name: Terraform validate
-        run: terraform -chdir=terraform/envs/dev init validate
+        run: terraform -chdir=terraform/envs/dev validate
 
       - name: Terraform plan
-        run: terraform -chdir=terraform/envs/dev init plan -var-file=dev.tfvars -input=false
+        run: terraform -chdir=terraform/envs/dev plan -var-file=dev.tfvars -input=false
