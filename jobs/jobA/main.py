@@ -1,1 +1,1 @@
-print("hello from jobA to jobB! yay! ")
+print("hello from jobA to jobB! ")
