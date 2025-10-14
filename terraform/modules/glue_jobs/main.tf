@@ -1,6 +1,6 @@
 resource "aws_glue_job" "this" {
 	name     = var.job_name
-	role_arn = var.role.arn
+	role_arn = var.role_arn
 
 	command {
 	name = var.command_name
