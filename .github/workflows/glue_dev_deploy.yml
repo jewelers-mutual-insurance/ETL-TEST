@@ -1,0 +1,57 @@
+name: Glue Dev Deploy
+on:
+ push:
+   branches: [ "dev" ]      # or "main" 
+   paths:
+     - "jobs/**"
+     - "terraform/**"
+permissions:
+ id-token: write
+ contents: read
+env:
+ AWS_REGION: us-east-1
+ DEV_ROLE_ARN: arn:aws:iam::992382796538:role/GitHubActionsGlueDeploy-dev
+ ARTIFACT_BUCKET: jm-992382796538-us-east-1-glue-artifacts-dev
+jobs:
+ dev-deploy:
+   runs-on: ubuntu-latest
+   steps:
+     - uses: actions/checkout@v4
+     - name: Configure AWS (OIDC)
+       uses: aws-actions/configure-aws-credentials@v4
+       with:
+         role-to-assume: ${{ env.DEV_ROLE_ARN }}
+         aws-region: ${{ env.AWS_REGION }}
+     - name: Discover jobs
+       id: jobs
+       run: |
+         ls -1 jobs > jobs.list
+         echo "jobs=$(cat jobs.list | tr '\n' ' ')" >> $GITHUB_OUTPUT
+         echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+     - name: Zip & upload artifacts
+       id: upload
+       run: |
+         set -e
+         MAP="{"
+         for j in ${{ steps.jobs.outputs.jobs }}; do
+           (cd "jobs/$j" && zip -r "../../${j}.zip" . -x "__pycache__/*" "*.pyc")
+           KEY="glue/jobs/${j}/${{ steps.jobs.outputs.sha }}.zip"
+           aws s3 cp "${j}.zip" "s3://${{ env.ARTIFACT_BUCKET }}/${KEY}"
+           URI="s3://${{ env.ARTIFACT_BUCKET }}/${KEY}"
+           MAP="$MAP\"$j\":\"$URI\","
+         done
+         MAP="${MAP%,}}"
+         echo "SCRIPT_MAP=$MAP" >> $GITHUB_ENV
+         echo "SCRIPT_MAP=$MAP"
+     - name: Setup Terraform
+       uses: hashicorp/setup-terraform@v3
+     - name: Terraform init (remote backend)
+       run: terraform -chdir=terraform/envs/dev init -backend-config=backend.hcl -input=false
+     - name: Terraform plan (dev)
+       env:
+         TF_VAR_script_s3_map: ${{ env.SCRIPT_MAP }}
+       run: terraform -chdir=terraform/envs/dev plan -var-file=dev.tfvars -input=false
+     - name: Terraform apply (dev)
+       env:
+         TF_VAR_script_s3_map: ${{ env.SCRIPT_MAP }}
+       run: terraform -chdir=terraform/envs/dev apply -auto-approve -var-file=dev.tfvars -input=false
