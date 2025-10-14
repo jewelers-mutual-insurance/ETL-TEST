@@ -11,7 +11,7 @@ module "jobs" {
 
   job_name = each.key
   role_arn = var.glue_role_arn
-  script_s3 = each.value
+  script_s3_path = each.value
   glue_version = "4.0"
   worker_type = "G.1X"
   number_of_workers = 2
