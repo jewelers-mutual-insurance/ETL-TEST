@@ -6,7 +6,7 @@ terraform{
 }
 
 module "jobs" {
-SOURCE = "terraform/modules/glue_jobs"
+source = "terraform/modules/glue_jobs"
 for each = var.script_s3_map      # job_name -> script zip
 
 job_name = each.key
