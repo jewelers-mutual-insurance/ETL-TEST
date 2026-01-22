@@ -1,57 +1,90 @@
 name: Glue Dev Deploy
 on:
  push:
-   branches: [ "dev" ]      # or "main" 
+   branches: [ "dev" ]           # change if you deploy from another branch
    paths:
-     - "jobs/**"
-     - "terraform/**"
+     - "jobs/**"                  # only run when job code changes
 permissions:
- id-token: write
+ id-token: write                  # OIDC for AWS creds
  contents: read
 env:
  AWS_REGION: us-east-1
  DEV_ROLE_ARN: arn:aws:iam::992382796538:role/GitHubActionsGlueDeploy-dev
  ARTIFACT_BUCKET: jm-992382796538-us-east-1-glue-artifacts-dev
+ # Map repo folder -> Glue job name. Add more lines as you onboard jobs.
+ # Example: jobB=jobB
+ JOB_MAP: |-
+   jobA=jobA
 jobs:
- dev-deploy:
+ deploy:
    runs-on: ubuntu-latest
    steps:
      - uses: actions/checkout@v4
+     # 1) Assume AWS role via OIDC
      - name: Configure AWS (OIDC)
        uses: aws-actions/configure-aws-credentials@v4
        with:
          role-to-assume: ${{ env.DEV_ROLE_ARN }}
          aws-region: ${{ env.AWS_REGION }}
-     - name: Discover jobs
-       id: jobs
-       run: |
-         ls -1 jobs > jobs.list
-         echo "jobs=$(cat jobs.list | tr '\n' ' ')" >> $GITHUB_OUTPUT
-         echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
-     - name: Zip & upload artifacts
-       id: upload
+     - name: Who am I
+       run: aws sts get-caller-identity
+     # 2) Detect changed files under jobs/**
+     - name: Detect changed job folders
+       id: changed
+       uses: tj-actions/changed-files@v45
+       with:
+         files: |
+           jobs/**
+     - name: Build job list
+       id: build
        run: |
          set -e
-         MAP="{"
-         for j in ${{ steps.jobs.outputs.jobs }}; do
-           (cd "jobs/$j" && zip -r "../../${j}.zip" . -x "__pycache__/*" "*.pyc")
-           KEY="glue/jobs/${j}/${{ steps.jobs.outputs.sha }}.zip"
-           aws s3 cp "${j}.zip" "s3://${{ env.ARTIFACT_BUCKET }}/${KEY}"
-           URI="s3://${{ env.ARTIFACT_BUCKET }}/${KEY}"
-           MAP="$MAP\"$j\":\"$URI\","
+         sha="${GITHUB_SHA}"
+         changed="${{ steps.changed.outputs.all_changed_files }}"
+         jobs=""
+         for f in $changed; do
+           case "$f" in
+             jobs/*/*)
+               j=$(echo "$f" | cut -d/ -f2)
+               jobs="$jobs $j"
+             ;;
+           esac
          done
-         MAP="${MAP%,}}"
-         echo "SCRIPT_MAP=$MAP" >> $GITHUB_ENV
-         echo "SCRIPT_MAP=$MAP"
-     - name: Setup Terraform
-       uses: hashicorp/setup-terraform@v3
-     - name: Terraform init (remote backend)
-       run: terraform -chdir=terraform/envs/dev init -backend-config=backend.hcl -input=false
-     - name: Terraform plan (dev)
-       env:
-         TF_VAR_script_s3_map: ${{ env.SCRIPT_MAP }}
-       run: terraform -chdir=terraform/envs/dev plan -var-file=dev.tfvars -input=false
-     - name: Terraform apply (dev)
-       env:
-         TF_VAR_script_s3_map: ${{ env.SCRIPT_MAP }}
-       run: terraform -chdir=terraform/envs/dev apply -auto-approve -var-file=dev.tfvars -input=false
+         jobs=$(echo "$jobs" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+         echo "jobs=$jobs" >> $GITHUB_OUTPUT
+         echo "sha=$sha" >> $GITHUB_OUTPUT
+         echo "Changed job folders: $jobs"
+     # 3) Upload main.py to S3 (versioned by commit SHA) and point Glue to it
+     - name: Upload & update Glue
+       if: steps.build.outputs.jobs != ''
+       run: |
+         set -e
+         sha="${{ steps.build.outputs.sha }}"
+         for j in ${{ steps.build.outputs.jobs }}; do
+           # map repo folder -> Glue Job name
+           glue_name=""
+           while IFS='=' read -r k v; do
+             [ -z "$k" ] && continue
+             [ "$k" = "$j" ] && glue_name="$v"
+           done <<< "${JOB_MAP}"
+           if [ -z "$glue_name" ]; then
+             echo "No Glue mapping for repo job '$j' in JOB_MAP; skipping"
+             continue
+           fi
+           src="jobs/$j/main.py"
+           if [ ! -f "$src" ]; then
+             echo "Missing $src; skipping"
+             continue
+           fi
+           key="glue/jobs/${j}/${sha}/main.py"
+           uri="s3://${ARTIFACT_BUCKET}/${key}"
+           echo "Uploading $src -> $uri"
+           aws s3 cp "$src" "$uri"
+           echo "Updating Glue job '$glue_name' to ScriptLocation=${uri}"
+           aws glue update-job --job-name "$glue_name" \
+             --job-update "Command={Name=glueetl,PythonVersion=3,ScriptLocation=${uri}}"
+           echo "::notice title=Updated::${glue_name} -> ${uri}"
+         done
+     - name: No changes guard
+       if: steps.build.outputs.jobs == ''
+       run: echo "No job code changes detected under jobs/**"
