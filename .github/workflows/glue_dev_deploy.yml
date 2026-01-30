@@ -9,7 +9,7 @@ permissions:
  contents: read
 env:
  AWS_REGION: us-east-1
- DEV_ROLE_ARN: arn:aws:iam::992382796538:role/GitHubActionsGlueDeploy-dev
+ DEV_ROLE_ARN: arn: arn:aws:iam::992382796538:role/gha-terraform-glue-deploy-dev
  ARTIFACT_BUCKET: jm-992382796538-us-east-1-glue-artifacts-dev
  # Map repo folder -> Glue job name. Add more lines as you onboard jobs.
  # Example: jobB=jobB
